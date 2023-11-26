@@ -10,7 +10,21 @@ const App = () => {
 	const [selectedEvents, setSelectedEvents] = useState([]);
 
 	useEffect(() => {
-		fetch("https://en.wikipedia.org/w/api.php?origin=*&action=opensearch&format=json&limit=" + SUGGESTION_LIMIT + "&search=" + search, {
+		const paramsObj = {
+			origin: "*",
+			action: "query",
+			format: "json",
+			generator: "prefixsearch",
+			prop: "pageprops|pageimages|description",
+			ppprop: "displaytitle",
+			piprop: "thumbnail",
+			pithumbsize: "75",
+			pilimit: "6",
+			gpssearch: search,
+			gpsnamespace: "0",
+			gpslimit: "6",
+		}
+		fetch("https://en.wikipedia.org/w/api.php?" + new URLSearchParams(paramsObj).toString(), {
 			method: "GET",
 			headers: {
 				"Origin": "*"
@@ -29,7 +43,7 @@ const App = () => {
 					}
 					return
 				}
-				const newState = response[1].map((title, index) => { return { title, url: response[3][index] } })
+				const newState = Object.keys(response.query.pages).map(key => response.query.pages[key])
 				setSuggestions(newState)
 			})
 	}, [search])
@@ -46,11 +60,14 @@ const App = () => {
 				console.log(response)
 				const parser = new DOMParser();
 				const htmlDoc = parser.parseFromString(response.parse.text['*'], 'text/html')
-				// console.log(htmlDoc)
 				const xpath = "//th[text()='Date']";
-				// const doc = htmlDoc.getElementsByClassName('infobox vevent')[0]
 				const infoboxDateHeader = htmlDoc.evaluate(xpath, htmlDoc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-				console.log(infoboxDateHeader.nextSibling)
+				const date = infoboxDateHeader.nextSibling.textContent;
+				// Regex handles "dd month yyyy" or "month dd, yyyy"
+				const regex = /(\d{1,2}\s[A-Z]\w+\s{1}\d{4})|([A-Z]\w+\s\d{1,2},\s\d{4})/g;
+				console.log(date)
+				console.log(date.match(regex))
+				console.log(Date.parse(date.match(regex)[0]))
 			})
 	}
 
@@ -58,7 +75,7 @@ const App = () => {
 		getWikiPage(choice)
 		setSearch('')
 		setSuggestions([])
-
+		setSelectedEvents([...selectedEvents, ])
 	}
 
 	return (
