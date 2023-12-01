@@ -7,6 +7,7 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
+		"dayjs": "^1.11.10",
 		"preact": "^10.13.1"
 	},
 	"devDependencies": {
