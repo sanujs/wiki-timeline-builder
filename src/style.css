@@ -55,7 +55,6 @@ section {
 
 #suggestions {
 	position: absolute;
-	/* left: 0; */
 	width: inherit;
 }
 
@@ -73,6 +72,17 @@ section {
 
 .suggestion-text {
 	margin: 0;
+}
+
+.event {
+	text-align: left;
+	background-color: #222;
+	border-radius: 1rem;
+	position: relative;
+	padding: 10px 40px;
+	margin: 10px;
+	width: 400px;
+	z-index: -1;
 }
 
 h4 {

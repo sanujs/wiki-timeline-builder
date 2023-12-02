@@ -119,7 +119,7 @@ const App = () => {
 
 	return (
 		<div>
-			<h1>Get Started building a beautiful timeline</h1>
+			<h1>Get started building a beautiful timeline</h1>
 			<Search value={search} setSearch={setSearch} suggestions={suggestions} userSelect={userSelect}/>
 			<Timeline events={selectedEvents}/>
 		</div>
