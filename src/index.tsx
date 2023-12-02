@@ -7,6 +7,15 @@ import customParseFormat from 'dayjs/plugin/customParseFormat';
 
 dayjs.extend(customParseFormat)
 
+type WikiSuggestion = {
+	description: string,
+	descriptionsource?: string,
+	index: number,
+	ns?: number,
+	pageid: number,
+	title: string
+}
+
 const App = () => {
 	const SUGGESTION_LIMIT = 5;
 	const [search, setSearch] = useState('');
@@ -47,6 +56,8 @@ const App = () => {
 				if ("error" in response) {
 					if (response["error"]["code"] != "missingparam") {
 						setError(response["error"])
+					} else {
+						setSuggestions([])
 					}
 					return
 				}
@@ -61,8 +72,8 @@ const App = () => {
 		console.log("Error: Cannot parse date from date header")
 	}
 
-	async function getWikiPage(choice: WikiSuggestion) {
-		await fetch("https://en.wikipedia.org/w/api.php?origin=*&action=parse&format=json&prop=text&page=" + choice.title)
+	const userSelect = (choice: WikiSuggestion): void => {
+		fetch("https://en.wikipedia.org/w/api.php?origin=*&action=parse&format=json&prop=text&page=" + choice.title)
 			.then(response => {
 				if (!response.ok) {
 					throw response;
@@ -70,7 +81,7 @@ const App = () => {
 				return response.json();
 			})
 			.then(response => {
-				console.log(response)
+				console.log("response: ", response)
 				const htmlDoc: Document = new DOMParser().parseFromString(response.parse.text['*'], 'text/html')
 				const xpath: string = "//th[text()='Date']";
 				let infoboxDateHeader: Node;
@@ -90,34 +101,34 @@ const App = () => {
 					dateError();
 					return null;
 				}
-				return dayjs(dates[0], ["D MMMM YYYY", "MMMM D, YYYY"]);
-				// console.log(dayjsDate.format("DD/MM/YYYY"))
+				return {
+					title: choice.title,
+					description: choice.description,
+					dateStart: dayjs(dates[0], ["D MMMM YYYY", "MMMM D, YYYY"]),
+					...dates.length > 1 && {dateEnd: dayjs(dates[1], ["D MMMM YYYY", "MMMM D, YYYY"])},
+				}
 			})
-	}
-
-	const userSelect = (choice: WikiSuggestion) => {
-		setSelectedEvents([...selectedEvents, getWikiPage(choice)])
-		setSearch('')
-		// setSuggestions([])
-		console.log(suggestions)
+			.then(newEvent => {
+				console.log("new event: ", newEvent)
+				const i = selectedEvents.findIndex((curEvent => curEvent.dateStart.isAfter(newEvent.dateStart)))
+				setSelectedEvents(selectedEvents.slice(0, i).concat(newEvent, selectedEvents.slice(i)))
+				setSearch('')
+				setSuggestions([])
+			})
 	}
 
 	return (
 		<div>
 			<h1>Get Started building a beautiful timeline</h1>
 			<Search value={search} setSearch={setSearch} suggestions={suggestions} userSelect={userSelect}/>
+			<Timeline events={selectedEvents}/>
 		</div>
 	);
 }
-type WikiSuggestion = {
-	description: string,
-	descriptionsource?: string,
-	index: number,
-	ns?: number,
-	pageid: number,
-	title: string
-}
 
+/**************
+ ********* Search component
+ **************/
 type SearchProps = {
 	value: string,
 	suggestions: WikiSuggestion[],
@@ -152,6 +163,36 @@ const Search = (props: SearchProps) => {
 			<div id="suggestions">
 				{searchSuggestions}
 			</div>
+		</div>
+	)
+}
+
+/**************
+ ********* Timeline Component
+ **************/
+
+type TimelineEvent = {
+	title: string,
+	description: string,
+	dateStart: dayjs.Dayjs,
+	dateEnd?: dayjs.Dayjs,
+}
+
+type TimelineProps = {
+	events: TimelineEvent[]
+}
+
+const Timeline = (props: TimelineProps) => {
+	const events = props.events.map(e =>
+		<div className="event">
+			<h1>{e.dateStart.format("YYYY")}</h1>
+			<h2>{e.title}</h2>
+			<p>{e.description}</p>
+		</div>
+	)
+	return (
+		<div id="timeline">
+			{events}
 		</div>
 	)
 }
