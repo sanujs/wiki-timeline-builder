@@ -73,7 +73,7 @@ const App = () => {
 	}
 
 	const userSelect = (choice: WikiSuggestion): void => {
-		fetch("https://en.wikipedia.org/w/api.php?origin=*&action=parse&format=json&prop=text&page=" + choice.title)
+		fetch("https://www.wikidata.org/w/api.php?origin=*&action=wbgetentities&sites=enwiki&props=claims&format=json&titles=" + choice.title)
 			.then(response => {
 				if (!response.ok) {
 					throw response;
@@ -81,31 +81,16 @@ const App = () => {
 				return response.json();
 			})
 			.then(response => {
-				console.log("response: ", response)
-				const htmlDoc: Document = new DOMParser().parseFromString(response.parse.text['*'], 'text/html')
-				const xpath: string = "//th[text()='Date']";
-				let infoboxDateHeader: Node;
-				try {
-					infoboxDateHeader = htmlDoc.evaluate(xpath, htmlDoc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-				} catch(err) {
-					if (err.name == "TypeError" && err.message == "infoboxDateHeader is null") {
-						console.log("No date header found!")
-					} else {
-						throw err;
-					}
-				}
-				const rawDateText: string = infoboxDateHeader.nextSibling.textContent;
-				const regex: RegExp = /(\d{1,2}\s[A-Z]\w+\s{1}\d{4})|([A-Z]\w+\s\d{1,2},\s\d{4})/g;
-				const dates: string[] = rawDateText.match(regex)
-				if (!dates.length) {
-					dateError();
-					return null;
-				}
+				console.log("response: ", Object.values(response.entities))
+				const dates = [
+					(Object.values(response.entities)[0] as any).claims.P580?.[0].mainsnak.datavalue.value.time.substring(1),
+					(Object.values(response.entities)[0] as any).claims.P582?.[0].mainsnak.datavalue.value.time.substring(1),
+				]
 				return {
 					title: choice.title,
 					description: choice.description,
-					dateStart: dayjs(dates[0], ["D MMMM YYYY", "MMMM D, YYYY"]),
-					...dates.length > 1 && {dateEnd: dayjs(dates[1], ["D MMMM YYYY", "MMMM D, YYYY"])},
+					dateStart: dayjs(dates[0]),
+					...dates.length > 1 && {dateEnd: dayjs(dates[1])},
 				}
 			})
 			.then(newEvent => {
@@ -120,7 +105,8 @@ const App = () => {
 				setSuggestions([])
 			})
 	}
-
+	useEffect(()=>{console.log(selectedEvents)}, [selectedEvents])
+				
 	return (
 		<div>
 			<h1>Get started building a beautiful timeline</h1>
