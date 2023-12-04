@@ -111,7 +111,11 @@ const App = () => {
 			.then(newEvent => {
 				console.log("new event: ", newEvent)
 				const i = selectedEvents.findIndex((curEvent => curEvent.dateStart.isAfter(newEvent.dateStart)))
-				setSelectedEvents(selectedEvents.slice(0, i).concat(newEvent, selectedEvents.slice(i)))
+				if (i==-1) {
+					setSelectedEvents([...selectedEvents, newEvent]);
+				} else {
+					setSelectedEvents(selectedEvents.slice(0, i).concat(newEvent, selectedEvents.slice(i)))
+				}
 				setSearch('')
 				setSuggestions([])
 			})
@@ -183,12 +187,15 @@ type TimelineProps = {
 }
 
 const Timeline = (props: TimelineProps) => {
-	const events = props.events.map(e =>
-		<div className="event">
-			<h1>{e.dateStart.format("YYYY")}</h1>
-			<h2>{e.title}</h2>
-			<p>{e.description}</p>
-		</div>
+	let left = false;
+	const events = props.events.map(e => {
+		left = !left;
+		return <div className={left ? "event left" : "event right"}>
+				<h1>{e.dateStart.format("MMMM DD, YYYY")}</h1>
+				<h2>{e.title}</h2>
+				<p>{e.description}</p>
+			</div>
+		}
 	)
 	return (
 		<div id="timeline">

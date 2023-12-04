@@ -27,6 +27,7 @@ body {
 }
 
 #app {
+	width: 75%;
 	max-width: 1280px;
 	margin: 0 auto;
 	text-align: center;
@@ -38,6 +39,7 @@ input {
 	font-size: 1.3rem;
 	padding: 0.25rem;
 	position: relative;
+	margin: 0 auto 25px;
 }
 
 section {
@@ -56,6 +58,7 @@ section {
 #suggestions {
 	position: absolute;
 	width: inherit;
+	z-index: 1;
 }
 
 .suggestion {
@@ -74,15 +77,38 @@ section {
 	margin: 0;
 }
 
+#timeline {
+	position: relative;
+	/* background-color: #333333; */
+	/* border: 2px solid #bbb */
+}
+
+#timeline::after {
+	content: '';
+	position: absolute;
+	width: 6px;
+	background-color: white;
+	top: 0;
+	bottom: 0;
+	left: 50%;
+	/* margin-left: -3px */
+}
+
 .event {
 	text-align: left;
 	background-color: #222;
 	border-radius: 1rem;
 	position: relative;
-	padding: 10px 40px;
-	margin: 10px;
-	width: 400px;
-	z-index: -1;
+	padding: 10px 40px 30px;
+	width: 40%;
+}
+
+.left {
+	left: 0;
+}
+
+.right {
+	left: 60%;
 }
 
 h4 {
@@ -120,5 +146,8 @@ li {
 	}
 	.suggestion:hover {
 		border: 1px solid #bbb;
+	}
+	#timeline::after {
+		background-color: lightslategrey;
 	}
 }
