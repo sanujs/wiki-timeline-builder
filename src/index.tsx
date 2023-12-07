@@ -22,6 +22,7 @@ const App = () => {
 	const [error, setError] = useState(null);
 	const [suggestions, setSuggestions] = useState([]);
 	const [selectedEvents, setSelectedEvents] = useState([]);
+	const [queryResults, setQueryResults] = useState({});
 
 	useEffect(() => {
 		const paramsObj = {
@@ -72,8 +73,10 @@ const App = () => {
 		console.log("Error: Cannot parse date from date header")
 	}
 
-	const userSelect = (choice: WikiSuggestion): void => {
-		fetch("https://www.wikidata.org/w/api.php?origin=*&action=wbgetentities&sites=enwiki&props=claims&format=json&titles=" + choice.title)
+	const userSelectWikiData = (choice: WikiSuggestion): void => {
+		setSearch('');
+		setSuggestions([]);
+		fetch("https://en.wikipedia.org/w/api.php?origin=*&action=query&prop=pageprops&ppprop=wikibase_item&formatversion=2&format=json&titles=" + choice.title)
 			.then(response => {
 				if (!response.ok) {
 					throw response;
@@ -81,39 +84,102 @@ const App = () => {
 				return response.json();
 			})
 			.then(response => {
-				console.log("response: ", Object.values(response.entities))
-				const dates = [
-					(Object.values(response.entities)[0] as any).claims.P580?.[0].mainsnak.datavalue.value.time.substring(1),
-					(Object.values(response.entities)[0] as any).claims.P582?.[0].mainsnak.datavalue.value.time.substring(1),
-				]
-				return {
-					title: choice.title,
-					description: choice.description,
-					dateStart: dayjs(dates[0]),
-					...dates.length > 1 && {dateEnd: dayjs(dates[1])},
-				}
+				console.log(response);
+				const itemID = response.query.pages[0].pageprops.wikibase_item;
+				const query = `
+				SELECT ?pslLabel ?valueLabel ?tqLabel ?pointintime ?aqLabel ?qualifierValueLabel WHERE {
+					{
+					  wd:${itemID} ?property ?pointintime.
+					  ?psl wikibase:directClaim ?property.
+					  FILTER(DATATYPE(?pointintime) = xsd:dateTime).
+					}
+					UNION
+					{
+					  wd:${itemID} ?property ?object.
+					  ?object ?timeQualifier ?pointintime.
+					  ?tq wikibase:qualifier ?timeQualifier.
+					  FILTER(DATATYPE(?pointintime) = xsd:dateTime).
+					  ?object ?ps ?value.
+					  ?psl wikibase:statementProperty ?ps.
+					  ?object ?allqualifiers ?qualifierValue.
+					  ?aq wikibase:qualifier ?allqualifiers.
+					}
+					SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+				  }
+				`
+				return fetch("https://query.wikidata.org/sparql?origin=*&format=json&query=" + query);
 			})
-			.then(newEvent => {
-				console.log("new event: ", newEvent)
-				const i = selectedEvents.findIndex((curEvent => curEvent.dateStart.isAfter(newEvent.dateStart)))
-				if (i==-1) {
-					setSelectedEvents([...selectedEvents, newEvent]);
-				} else {
-					setSelectedEvents(selectedEvents.slice(0, i).concat(newEvent, selectedEvents.slice(i)))
+			.then(response => {
+				if (!response.ok) {
+					throw response;
 				}
-				setSearch('')
-				setSuggestions([])
+				return response.json();
+			})
+			.then(response => {
+				console.log("response: ", response)
+				const results: any[] = response.results.bindings;
+				let qr: QueryResult = {};
+
+				for (const result of results) {
+					let fullItem = true;
+					if (!('valueLabel' in result)) {
+						fullItem = false;
+					}
+					// TODO: Add check/log for unexpected query results (neither fullitem/non-fullitem)
+					if (!(result.pointintime.value in qr)) {
+						qr[result.pointintime.value] = {
+							date: {
+								'property': fullItem ? result.tqLabel.value : result.pslLabel.value,
+								'item': dayjs(result.pointintime.value),
+							},
+							...fullItem && {propertyStatement: {
+									'property': result.pslLabel.value,
+									'item': result.valueLabel.value,
+								},
+								qualifiers: [{
+									'property': result.aqLabel.value,
+									'item': result.qualifierValueLabel.value,
+								}]
+							}
+						}
+					} else {
+						if (result.aqLabel.value == result.tqLabel.value) {
+							continue;
+						}
+						if (!qr[result.pointintime.value].qualifiers) {
+							qr[result.pointintime.value].qualifiers = [];
+						}
+						qr[result.pointintime.value].qualifiers.push({
+								'property': result.aqLabel.value,
+								'item': result.qualifierValueLabel.value,
+							});
+					}
+				}
+				setQueryResults(qr);
 			})
 	}
-	useEffect(()=>{console.log(selectedEvents)}, [selectedEvents])
-				
+	useEffect(()=>{console.log(queryResults)}, [queryResults])
+
 	return (
 		<div>
 			<h1>Get started building a beautiful timeline</h1>
-			<Search value={search} setSearch={setSearch} suggestions={suggestions} userSelect={userSelect}/>
-			<Timeline events={selectedEvents}/>
+			<Search value={search} setSearch={setSearch} suggestions={suggestions} userSelect={userSelectWikiData}/>
+			<Timeline events={selectedEvents} qrs={queryResults}/>
 		</div>
 	);
+}
+
+type Wikidata = {
+	property: string,
+	item: string | dayjs.Dayjs,
+}
+
+type QueryResult = {
+	[key: string]: {
+		date: Wikidata,
+		propertyStatement?: Wikidata,
+		qualifiers?: Wikidata[],
+	}
 }
 
 /**************
@@ -169,20 +235,29 @@ type TimelineEvent = {
 }
 
 type TimelineProps = {
-	events: TimelineEvent[]
+	events: TimelineEvent[],
+	qrs: QueryResult,
 }
 
 const Timeline = (props: TimelineProps) => {
 	let left = false;
-	const events = props.events.map(e => {
+	let qrArray = [];
+	for (const qr of Object.values(props.qrs)) {
+		const i = qrArray.findIndex((curEvent => curEvent.date.item.isAfter(qr.date.item)))
+		if (i==-1) {
+			qrArray.push(qr);
+		} else {
+			qrArray = qrArray.slice(0, i).concat(qr, qrArray.slice(i))
+		}
+	}
+	const events = qrArray.map(qr => {
 		left = !left;
 		return <div className={left ? "event left" : "event right"}>
-				<h1>{e.dateStart.format("MMMM DD, YYYY")}</h1>
-				<h2>{e.title}</h2>
-				<p>{e.description}</p>
+				<h1>{qr.date.item.format("MMMM DD, YYYY")}</h1>
+				<h4>{'propertyStatement' in qr ? qr.propertyStatement.property + ": " + qr.propertyStatement.item + " (" + qr.date.property + ")" : qr.date.property}</h4>
+				{'qualifiers' in qr && qr.qualifiers.map(x => <p>{x.property}: {x.item}</p>)}
 			</div>
-		}
-	)
+	})
 	return (
 		<div id="timeline">
 			{events}
