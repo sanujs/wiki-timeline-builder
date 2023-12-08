@@ -3,9 +3,9 @@ import { useState, useEffect } from 'preact/hooks';
 import { SetStateAction } from 'preact/compat';
 import './style.css';
 import * as dayjs from 'dayjs';
-import customParseFormat from 'dayjs/plugin/customParseFormat';
+import utc from 'dayjs/plugin/utc';
 
-dayjs.extend(customParseFormat)
+dayjs.extend(utc)
 
 type WikiSuggestion = {
 	description: string,
@@ -17,11 +17,9 @@ type WikiSuggestion = {
 }
 
 const App = () => {
-	const SUGGESTION_LIMIT = 5;
 	const [search, setSearch] = useState('');
 	const [error, setError] = useState(null);
 	const [suggestions, setSuggestions] = useState([]);
-	const [selectedEvents, setSelectedEvents] = useState([]);
 	const [queryResults, setQueryResults] = useState({});
 
 	useEffect(() => {
@@ -86,23 +84,27 @@ const App = () => {
 			.then(response => {
 				console.log(response);
 				const itemID = response.query.pages[0].pageprops.wikibase_item;
+				// https://w.wiki/8Qwo
 				const query = `
-				SELECT ?pslLabel ?valueLabel ?tqLabel ?pointintime ?aqLabel ?qualifierValueLabel WHERE {
+				SELECT ?propertyItemLabel ?valueLabel ?qualifierItemLabel ?pointintime ?precision ?oqpLabel ?oqvLabel WHERE {
 					{
-					  wd:${itemID} ?property ?pointintime.
-					  ?psl wikibase:directClaim ?property.
-					  FILTER(DATATYPE(?pointintime) = xsd:dateTime).
+					  wd:${itemID} ?property [?pValue ?valuenode].
+					  ?propertyItem wikibase:statementValue ?pValue.
+					  ?valuenode wikibase:timeValue ?pointintime.
+					  ?valuenode wikibase:timePrecision ?precision.
 					}
 					UNION
 					{
-					  wd:${itemID} ?property ?object.
-					  ?object ?timeQualifier ?pointintime.
-					  ?tq wikibase:qualifier ?timeQualifier.
-					  FILTER(DATATYPE(?pointintime) = xsd:dateTime).
-					  ?object ?ps ?value.
-					  ?psl wikibase:statementProperty ?ps.
-					  ?object ?allqualifiers ?qualifierValue.
-					  ?aq wikibase:qualifier ?allqualifiers.
+					  wd:${itemID} ?property ?statement.
+					  ?statement ?pValue ?valuenode.
+					  ?qualifierItem wikibase:qualifierValue ?pValue.
+					  ?valuenode wikibase:timeValue ?pointintime.
+					  ?valuenode wikibase:timePrecision ?precision.
+					  
+					  ?statement ?ps ?value.
+					  ?propertyItem wikibase:statementProperty ?ps.
+					  ?statement ?otherQualifierProperty ?oqv.
+					  ?oqp wikibase:qualifier ?otherQualifierProperty.
 					}
 					SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 				  }
@@ -129,29 +131,30 @@ const App = () => {
 					if (!(result.pointintime.value in qr)) {
 						qr[result.pointintime.value] = {
 							date: {
-								'property': fullItem ? result.tqLabel.value : result.pslLabel.value,
+								'property': fullItem ? result.qualifierItemLabel.value : result.propertyItemLabel.value,
 								'item': dayjs(result.pointintime.value),
+								'precision': parseInt(result.precision.value),
 							},
 							...fullItem && {propertyStatement: {
-									'property': result.pslLabel.value,
+									'property': result.propertyItemLabel.value,
 									'item': result.valueLabel.value,
 								},
 								qualifiers: [{
-									'property': result.aqLabel.value,
-									'item': result.qualifierValueLabel.value,
+									'property': result.oqpLabel.value,
+									'item': result.oqvLabel.value,
 								}]
 							}
 						}
 					} else {
-						if (result.aqLabel.value == result.tqLabel.value) {
+						if (result.oqpLabel.value == result.qualifierItemLabel.value) {
 							continue;
 						}
 						if (!qr[result.pointintime.value].qualifiers) {
 							qr[result.pointintime.value].qualifiers = [];
 						}
 						qr[result.pointintime.value].qualifiers.push({
-								'property': result.aqLabel.value,
-								'item': result.qualifierValueLabel.value,
+								'property': result.oqpLabel.value,
+								'item': result.oqvLabel.value,
 							});
 					}
 				}
@@ -164,7 +167,7 @@ const App = () => {
 		<div>
 			<h1>Get started building a beautiful timeline</h1>
 			<Search value={search} setSearch={setSearch} suggestions={suggestions} userSelect={userSelectWikiData}/>
-			<Timeline events={selectedEvents} qrs={queryResults}/>
+			<Timeline qrs={queryResults}/>
 		</div>
 	);
 }
@@ -172,6 +175,7 @@ const App = () => {
 type Wikidata = {
 	property: string,
 	item: string | dayjs.Dayjs,
+	precision?: number,
 }
 
 type QueryResult = {
@@ -227,19 +231,27 @@ const Search = (props: SearchProps) => {
  ********* Timeline Component
  **************/
 
-type TimelineEvent = {
-	title: string,
-	description: string,
-	dateStart: dayjs.Dayjs,
-	dateEnd?: dayjs.Dayjs,
-}
 
 type TimelineProps = {
-	events: TimelineEvent[],
 	qrs: QueryResult,
 }
 
 const Timeline = (props: TimelineProps) => {
+	const fixDateString = (item: string, precision: number) => {
+		if (dayjs(item).isValid()) {
+			return formatUsingPrecision(dayjs(item).utc(), precision);
+		}
+		return item;
+	}
+	const formatUsingPrecision = (date: dayjs.Dayjs, precision: number): string => {
+		switch(precision) {
+			case 7: return date.format("YYYY").substring(0, 2) + "00s";
+			case 8: return date.format("YYYY").substring(0, 3) + "0s";
+			case 9: return date.format("YYYY");
+			case 10: return date.format("MMMM YYYY");
+			default: return date.format("MMMM DD, YYYY");
+		}
+	}
 	let left = false;
 	let qrArray = [];
 	for (const qr of Object.values(props.qrs)) {
@@ -253,9 +265,9 @@ const Timeline = (props: TimelineProps) => {
 	const events = qrArray.map(qr => {
 		left = !left;
 		return <div className={left ? "event left" : "event right"}>
-				<h1>{qr.date.item.format("MMMM DD, YYYY")}</h1>
-				<h4>{'propertyStatement' in qr ? qr.propertyStatement.property + ": " + qr.propertyStatement.item + " (" + qr.date.property + ")" : qr.date.property}</h4>
-				{'qualifiers' in qr && qr.qualifiers.map(x => <p>{x.property}: {x.item}</p>)}
+				<h1>{formatUsingPrecision(qr.date.item.utc(), qr.date.precision)}</h1>
+				<h4>{'propertyStatement' in qr ? qr.propertyStatement.property + ": " + fixDateString(qr.propertyStatement.item, qr.propertyStatement.item in props.qrs ? props.qrs[qr.propertyStatement.item].date.precision : -1) + " (" + qr.date.property + ")" : qr.date.property}</h4>
+				{'qualifiers' in qr && qr.qualifiers.map(x => <p>{x.property}: {fixDateString(x.item, x.item in props.qrs ? props.qrs[x.item].date.precision : -1)}</p>)}
 			</div>
 	})
 	return (
