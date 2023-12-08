@@ -2,10 +2,12 @@ import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { SetStateAction } from 'preact/compat';
 import './style.css';
-import * as dayjs from 'dayjs';
+import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
+import customParseFormat from 'dayjs/plugin/customParseFormat';
 
-dayjs.extend(utc)
+dayjs.extend(utc);
+dayjs.extend(customParseFormat);
 
 type WikiSuggestion = {
 	description: string,
@@ -67,14 +69,20 @@ const App = () => {
 			})
 	}, [search])
 
-	const dateError = () => {
-		console.log("Error: Cannot parse date from date header")
-	}
-
 	const userSelectWikiData = (choice: WikiSuggestion): void => {
 		setSearch('');
 		setSuggestions([]);
-		fetch("https://en.wikipedia.org/w/api.php?origin=*&action=query&prop=pageprops&ppprop=wikibase_item&formatversion=2&format=json&titles=" + choice.title)
+		// Get wikibase item number from wikipedia title
+		const paramsObj = {
+			origin: "*",
+			action: "query",
+			format: "json",
+			prop: "pageprops",
+			ppprop: "wikibase_item",
+			formatversion: "2",
+			titles: choice.title,
+		}
+		fetch("https://en.wikipedia.org/w/api.php?" + new URLSearchParams(paramsObj).toString())
 			.then(response => {
 				if (!response.ok) {
 					throw response;
@@ -123,10 +131,7 @@ const App = () => {
 				let qr: QueryResult = {};
 
 				for (const result of results) {
-					let fullItem = true;
-					if (!('valueLabel' in result)) {
-						fullItem = false;
-					}
+					const fullItem = 'valueLabel' in result;
 					// TODO: Add check/log for unexpected query results (neither fullitem/non-fullitem)
 					if (!(result.pointintime.value in qr)) {
 						qr[result.pointintime.value] = {
@@ -135,27 +140,25 @@ const App = () => {
 								'item': dayjs(result.pointintime.value),
 								'precision': parseInt(result.precision.value),
 							},
+							qualifiers: [],
 							...fullItem && {propertyStatement: {
 									'property': result.propertyItemLabel.value,
 									'item': result.valueLabel.value,
 								},
-								qualifiers: [{
-									'property': result.oqpLabel.value,
-									'item': result.oqvLabel.value,
-								}]
 							}
 						}
-					} else {
-						if (result.oqpLabel.value == result.qualifierItemLabel.value) {
-							continue;
+					}
+					if ('oqpLabel' in result) {
+						const newQualifier: Wikidata = {
+							'property': result.oqpLabel.value,
+							'item': result.oqvLabel.value,
 						}
-						if (!qr[result.pointintime.value].qualifiers) {
-							qr[result.pointintime.value].qualifiers = [];
-						}
-						qr[result.pointintime.value].qualifiers.push({
-								'property': result.oqpLabel.value,
-								'item': result.oqvLabel.value,
-							});
+						if (result.oqpLabel.value != result.qualifierItemLabel.value &&
+							!qr[result.pointintime.value].qualifiers.some(e =>
+								e.property == newQualifier.property && e.item == newQualifier.item
+							)
+						)
+							qr[result.pointintime.value].qualifiers.push(newQualifier);
 					}
 				}
 				setQueryResults(qr);
@@ -238,12 +241,13 @@ type TimelineProps = {
 
 const Timeline = (props: TimelineProps) => {
 	const fixDateString = (item: string, precision: number) => {
-		if (dayjs(item).isValid()) {
-			return formatUsingPrecision(dayjs(item).utc(), precision);
+		if (dayjs(item, "YYYY-MM-DDTHH:mm:ssZ").isValid()) {
+			return formatUsingPrecision(dayjs(item), precision);
 		}
 		return item;
 	}
 	const formatUsingPrecision = (date: dayjs.Dayjs, precision: number): string => {
+		date = date.utc();
 		switch(precision) {
 			case 7: return date.format("YYYY").substring(0, 2) + "00s";
 			case 8: return date.format("YYYY").substring(0, 3) + "0s";
@@ -265,8 +269,15 @@ const Timeline = (props: TimelineProps) => {
 	const events = qrArray.map(qr => {
 		left = !left;
 		return <div className={left ? "event left" : "event right"}>
-				<h1>{formatUsingPrecision(qr.date.item.utc(), qr.date.precision)}</h1>
-				<h4>{'propertyStatement' in qr ? qr.propertyStatement.property + ": " + fixDateString(qr.propertyStatement.item, qr.propertyStatement.item in props.qrs ? props.qrs[qr.propertyStatement.item].date.precision : -1) + " (" + qr.date.property + ")" : qr.date.property}</h4>
+				<h1>{formatUsingPrecision(qr.date.item, qr.date.precision)}</h1>
+				<h4>{
+				'propertyStatement' in qr ?
+					qr.propertyStatement.property + ": " + fixDateString(
+						qr.propertyStatement.item,
+						qr.propertyStatement.item in props.qrs ? props.qrs[qr.propertyStatement.item].date.precision : -1
+					) + " (" + qr.date.property + ")" :
+					qr.date.property
+				}</h4>
 				{'qualifiers' in qr && qr.qualifiers.map(x => <p>{x.property}: {fixDateString(x.item, x.item in props.qrs ? props.qrs[x.item].date.precision : -1)}</p>)}
 			</div>
 	})
