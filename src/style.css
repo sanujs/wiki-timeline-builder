@@ -39,7 +39,7 @@ input {
 	font-size: 1.3rem;
 	padding: 0.25rem;
 	position: relative;
-	margin: 0 auto 25px;
+	margin: 0 auto;
 }
 
 section {
@@ -52,7 +52,7 @@ section {
 #search {
 	position: relative;
 	width: 30rem;
-	margin: 0 auto;
+	margin: 0 auto 25px;
 }
 
 #suggestions {

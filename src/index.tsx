@@ -2,10 +2,12 @@ import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { SetStateAction } from 'preact/compat';
 import './style.css';
-import * as dayjs from 'dayjs';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 
-dayjs.extend(customParseFormat)
+dayjs.extend(utc);
+dayjs.extend(customParseFormat);
 
 type WikiSuggestion = {
 	description: string,
@@ -17,11 +19,10 @@ type WikiSuggestion = {
 }
 
 const App = () => {
-	const SUGGESTION_LIMIT = 5;
 	const [search, setSearch] = useState('');
 	const [error, setError] = useState(null);
 	const [suggestions, setSuggestions] = useState([]);
-	const [selectedEvents, setSelectedEvents] = useState([]);
+	const [queryResults, setQueryResults] = useState({});
 
 	useEffect(() => {
 		const paramsObj = {
@@ -68,12 +69,56 @@ const App = () => {
 			})
 	}, [search])
 
-	const dateError = () => {
-		console.log("Error: Cannot parse date from date header")
-	}
-
-	const userSelect = (choice: WikiSuggestion): void => {
-		fetch("https://en.wikipedia.org/w/api.php?origin=*&action=parse&format=json&prop=text&page=" + choice.title)
+	const userSelectWikiData = (choice: WikiSuggestion): void => {
+		setSearch('');
+		setSuggestions([]);
+		// Get wikibase item number from wikipedia title
+		const paramsObj = {
+			origin: "*",
+			action: "query",
+			format: "json",
+			prop: "pageprops",
+			ppprop: "wikibase_item",
+			formatversion: "2",
+			titles: choice.title,
+		}
+		fetch("https://en.wikipedia.org/w/api.php?" + new URLSearchParams(paramsObj).toString())
+			.then(response => {
+				if (!response.ok) {
+					throw response;
+				}
+				return response.json();
+			})
+			.then(response => {
+				console.log(response);
+				const itemID = response.query.pages[0].pageprops.wikibase_item;
+				// https://w.wiki/8Qwo
+				const query = `
+				SELECT ?propertyItemLabel ?valueLabel ?qualifierItemLabel ?pointintime ?precision ?oqpLabel ?oqvLabel WHERE {
+					{
+					  wd:${itemID} ?property [?pValue ?valuenode].
+					  ?propertyItem wikibase:statementValue ?pValue.
+					  ?valuenode wikibase:timeValue ?pointintime.
+					  ?valuenode wikibase:timePrecision ?precision.
+					}
+					UNION
+					{
+					  wd:${itemID} ?property ?statement.
+					  ?statement ?pValue ?valuenode.
+					  ?qualifierItem wikibase:qualifierValue ?pValue.
+					  ?valuenode wikibase:timeValue ?pointintime.
+					  ?valuenode wikibase:timePrecision ?precision.
+					  
+					  ?statement ?ps ?value.
+					  ?propertyItem wikibase:statementProperty ?ps.
+					  ?statement ?otherQualifierProperty ?oqv.
+					  ?oqp wikibase:qualifier ?otherQualifierProperty.
+					}
+					SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+				  }
+				`
+				return fetch("https://query.wikidata.org/sparql?origin=*&format=json&query=" + query);
+			})
 			.then(response => {
 				if (!response.ok) {
 					throw response;
@@ -82,52 +127,66 @@ const App = () => {
 			})
 			.then(response => {
 				console.log("response: ", response)
-				const htmlDoc: Document = new DOMParser().parseFromString(response.parse.text['*'], 'text/html')
-				const xpath: string = "//th[text()='Date']";
-				let infoboxDateHeader: Node;
-				try {
-					infoboxDateHeader = htmlDoc.evaluate(xpath, htmlDoc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-				} catch(err) {
-					if (err.name == "TypeError" && err.message == "infoboxDateHeader is null") {
-						console.log("No date header found!")
-					} else {
-						throw err;
+				const results: any[] = response.results.bindings;
+				let qr: QueryResult = {};
+
+				for (const result of results) {
+					const fullItem = 'valueLabel' in result;
+					// TODO: Add check/log for unexpected query results (neither fullitem/non-fullitem)
+					if (!(result.pointintime.value in qr)) {
+						qr[result.pointintime.value] = {
+							date: {
+								'property': fullItem ? result.qualifierItemLabel.value : result.propertyItemLabel.value,
+								'item': dayjs(result.pointintime.value),
+								'precision': parseInt(result.precision.value),
+							},
+							qualifiers: [],
+							...fullItem && {propertyStatement: {
+									'property': result.propertyItemLabel.value,
+									'item': result.valueLabel.value,
+								},
+							}
+						}
+					}
+					if ('oqpLabel' in result) {
+						const newQualifier: Wikidata = {
+							'property': result.oqpLabel.value,
+							'item': result.oqvLabel.value,
+						}
+						if (result.oqpLabel.value != result.qualifierItemLabel.value &&
+							!qr[result.pointintime.value].qualifiers.some(e =>
+								e.property == newQualifier.property && e.item == newQualifier.item
+							)
+						)
+							qr[result.pointintime.value].qualifiers.push(newQualifier);
 					}
 				}
-				const rawDateText: string = infoboxDateHeader.nextSibling.textContent;
-				const regex: RegExp = /(\d{1,2}\s[A-Z]\w+\s{1}\d{4})|([A-Z]\w+\s\d{1,2},\s\d{4})/g;
-				const dates: string[] = rawDateText.match(regex)
-				if (!dates.length) {
-					dateError();
-					return null;
-				}
-				return {
-					title: choice.title,
-					description: choice.description,
-					dateStart: dayjs(dates[0], ["D MMMM YYYY", "MMMM D, YYYY"]),
-					...dates.length > 1 && {dateEnd: dayjs(dates[1], ["D MMMM YYYY", "MMMM D, YYYY"])},
-				}
-			})
-			.then(newEvent => {
-				console.log("new event: ", newEvent)
-				const i = selectedEvents.findIndex((curEvent => curEvent.dateStart.isAfter(newEvent.dateStart)))
-				if (i==-1) {
-					setSelectedEvents([...selectedEvents, newEvent]);
-				} else {
-					setSelectedEvents(selectedEvents.slice(0, i).concat(newEvent, selectedEvents.slice(i)))
-				}
-				setSearch('')
-				setSuggestions([])
+				setQueryResults(qr);
 			})
 	}
+	useEffect(()=>{console.log(queryResults)}, [queryResults])
 
 	return (
 		<div>
 			<h1>Get started building a beautiful timeline</h1>
-			<Search value={search} setSearch={setSearch} suggestions={suggestions} userSelect={userSelect}/>
-			<Timeline events={selectedEvents}/>
+			<Search value={search} setSearch={setSearch} suggestions={suggestions} userSelect={userSelectWikiData}/>
+			<Timeline qrs={queryResults}/>
 		</div>
 	);
+}
+
+type Wikidata = {
+	property: string,
+	item: string | dayjs.Dayjs,
+	precision?: number,
+}
+
+type QueryResult = {
+	[key: string]: {
+		date: Wikidata,
+		propertyStatement?: Wikidata,
+		qualifiers?: Wikidata[],
+	}
 }
 
 /**************
@@ -175,28 +234,53 @@ const Search = (props: SearchProps) => {
  ********* Timeline Component
  **************/
 
-type TimelineEvent = {
-	title: string,
-	description: string,
-	dateStart: dayjs.Dayjs,
-	dateEnd?: dayjs.Dayjs,
-}
 
 type TimelineProps = {
-	events: TimelineEvent[]
+	qrs: QueryResult,
 }
 
 const Timeline = (props: TimelineProps) => {
+	const fixDateString = (item: string, precision: number) => {
+		if (dayjs(item, "YYYY-MM-DDTHH:mm:ssZ").isValid()) {
+			return formatUsingPrecision(dayjs(item), precision);
+		}
+		return item;
+	}
+	const formatUsingPrecision = (date: dayjs.Dayjs, precision: number): string => {
+		date = date.utc();
+		switch(precision) {
+			case 7: return date.format("YYYY").substring(0, 2) + "00s";
+			case 8: return date.format("YYYY").substring(0, 3) + "0s";
+			case 9: return date.format("YYYY");
+			case 10: return date.format("MMMM YYYY");
+			default: return date.format("MMMM DD, YYYY");
+		}
+	}
 	let left = false;
-	const events = props.events.map(e => {
+	let qrArray = [];
+	for (const qr of Object.values(props.qrs)) {
+		const i = qrArray.findIndex((curEvent => curEvent.date.item.isAfter(qr.date.item)))
+		if (i==-1) {
+			qrArray.push(qr);
+		} else {
+			qrArray = qrArray.slice(0, i).concat(qr, qrArray.slice(i))
+		}
+	}
+	const events = qrArray.map(qr => {
 		left = !left;
 		return <div className={left ? "event left" : "event right"}>
-				<h1>{e.dateStart.format("MMMM DD, YYYY")}</h1>
-				<h2>{e.title}</h2>
-				<p>{e.description}</p>
+				<h1>{formatUsingPrecision(qr.date.item, qr.date.precision)}</h1>
+				<h4>{
+				'propertyStatement' in qr ?
+					qr.propertyStatement.property + ": " + fixDateString(
+						qr.propertyStatement.item,
+						qr.propertyStatement.item in props.qrs ? props.qrs[qr.propertyStatement.item].date.precision : -1
+					) + " (" + qr.date.property + ")" :
+					qr.date.property
+				}</h4>
+				{'qualifiers' in qr && qr.qualifiers.map(x => <p>{x.property}: {fixDateString(x.item, x.item in props.qrs ? props.qrs[x.item].date.precision : -1)}</p>)}
 			</div>
-		}
-	)
+	})
 	return (
 		<div id="timeline">
 			{events}
