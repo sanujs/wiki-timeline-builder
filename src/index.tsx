@@ -23,6 +23,7 @@ const App = () => {
 	const [error, setError] = useState(null);
 	const [suggestions, setSuggestions] = useState([]);
 	const [queryResults, setQueryResults] = useState({});
+	const [loading, setLoading] = useState(false);
 
 	useEffect(() => {
 		const paramsObj = {
@@ -72,6 +73,7 @@ const App = () => {
 	const userSelectWikiData = (choice: WikiSuggestion): void => {
 		setSearch('');
 		setSuggestions([]);
+		setLoading(true);
 		// Get wikibase item number from wikipedia title
 		const paramsObj = {
 			origin: "*",
@@ -92,6 +94,7 @@ const App = () => {
 			.then(response => {
 				console.log(response);
 				const itemID = response.query.pages[0].pageprops.wikibase_item;
+				console.log(itemID);
 				// https://w.wiki/8Qwo
 				const query = `
 				SELECT ?propertyItemLabel ?valueLabel ?qualifierItemLabel ?pointintime ?precision ?oqpLabel ?oqvLabel WHERE {
@@ -161,6 +164,7 @@ const App = () => {
 							qr[result.pointintime.value].qualifiers.push(newQualifier);
 					}
 				}
+				setLoading(false);
 				setQueryResults(qr);
 			})
 	}
@@ -170,7 +174,7 @@ const App = () => {
 		<div>
 			<h1>Get started building a beautiful timeline</h1>
 			<Search value={search} setSearch={setSearch} suggestions={suggestions} userSelect={userSelectWikiData}/>
-			<Timeline qrs={queryResults}/>
+			{loading ? <h1>Loading...</h1> : <Timeline qrs={queryResults}/>}
 		</div>
 	);
 }
