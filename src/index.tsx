@@ -54,7 +54,6 @@ const App = () => {
 				return response.json();
 			})
 			.then(response => {
-				// TODO: Standardize error handling
 				if ("error" in response) {
 					if (response["error"]["code"] != "missingparam") {
 						setError(response["error"])
@@ -95,7 +94,7 @@ const App = () => {
 				console.log(response);
 				const itemID = response.query.pages[0].pageprops.wikibase_item;
 				console.log(itemID);
-				// https://w.wiki/8Qwo
+				// https://w.wiki/8UZ9
 				const query = `
 				SELECT ?propertyItemLabel ?valueLabel ?qualifierItemLabel ?pointintime ?precision ?oqpLabel ?oqvLabel WHERE {
 					{
@@ -103,6 +102,8 @@ const App = () => {
 					  ?propertyItem wikibase:statementValue ?pValue.
 					  ?valuenode wikibase:timeValue ?pointintime.
 					  ?valuenode wikibase:timePrecision ?precision.
+					  BIND(?pointintime as ?value).
+					  BIND(?propertyItem as ?qualifierItem).
 					}
 					UNION
 					{
@@ -134,41 +135,45 @@ const App = () => {
 				let qr: QueryResult = {};
 
 				for (const result of results) {
-					const fullItem = 'valueLabel' in result;
-					// TODO: Add check/log for unexpected query results (neither fullitem/non-fullitem)
+					const event: string = result.propertyItemLabel.value + ":" + result.valueLabel.value;
 					if (!(result.pointintime.value in qr)) {
 						qr[result.pointintime.value] = {
 							date: {
-								'property': fullItem ? result.qualifierItemLabel.value : result.propertyItemLabel.value,
+								'property': result.qualifierItemLabel.value,
 								'item': dayjs(result.pointintime.value),
 								'precision': parseInt(result.precision.value),
 							},
+							events: {},
+						}
+					}
+					if (!(event in qr[result.pointintime.value].events)) {
+						qr[result.pointintime.value].events[event] = {
 							qualifiers: [],
-							...fullItem && {propertyStatement: {
-									'property': result.propertyItemLabel.value,
-									'item': result.valueLabel.value,
-								},
-							}
+							propertyStatement: {
+								'property': result.propertyItemLabel.value,
+								'item': result.valueLabel.value,
+							},
 						}
 					}
 					if ('oqpLabel' in result) {
-						const newQualifier: Wikidata = {
+						const newQualifier: WikidataItem = {
 							'property': result.oqpLabel.value,
 							'item': result.oqvLabel.value,
 						}
+						// Ignore duplicate qualifiers
 						if (result.oqpLabel.value != result.qualifierItemLabel.value &&
-							!qr[result.pointintime.value].qualifiers.some(e =>
+							!qr[result.pointintime.value].events[event].qualifiers.some(e =>
 								e.property == newQualifier.property && e.item == newQualifier.item
 							)
 						)
-							qr[result.pointintime.value].qualifiers.push(newQualifier);
+							qr[result.pointintime.value].events[event].qualifiers.push(newQualifier);
 					}
 				}
 				setLoading(false);
 				setQueryResults(qr);
 			})
 	}
-	useEffect(()=>{console.log(queryResults)}, [queryResults])
+	useEffect(()=>{console.log("QR:", queryResults)}, [queryResults])
 
 	return (
 		<div>
@@ -179,18 +184,28 @@ const App = () => {
 	);
 }
 
-type Wikidata = {
+type WikidataDate = {
 	property: string,
-	item: string | dayjs.Dayjs,
+	item: dayjs.Dayjs,
 	precision?: number,
+}
+type WikidataItem = {
+	property: string,
+	item: string,
+	precision?: number,
+}
+type TimelineCard = {
+	date: WikidataDate,
+	events: {
+		[key: string]: { // Event (formatted as "<propertyitem>:<valueitem>")
+			propertyStatement: WikidataItem,
+			qualifiers: WikidataItem[],
+		}
+	}
 }
 
 type QueryResult = {
-	[key: string]: {
-		date: Wikidata,
-		propertyStatement?: Wikidata,
-		qualifiers?: Wikidata[],
-	}
+	[key: string]: TimelineCard
 }
 
 /**************
@@ -244,9 +259,15 @@ type TimelineProps = {
 }
 
 const Timeline = (props: TimelineProps) => {
-	const fixDateString = (item: string, precision: number) => {
-		if (dayjs(item, "YYYY-MM-DDTHH:mm:ssZ").isValid()) {
-			return formatUsingPrecision(dayjs(item), precision);
+	const fixDateString = (item: string | dayjs.Dayjs, precision: number) : string => {
+		switch (typeof item) {
+			case "string":
+				if (dayjs(item, "YYYY-MM-DDTHH:mm:ssZ").isValid()) {
+					return formatUsingPrecision(dayjs(item), precision);
+				}
+				break;
+			case "object":
+				return formatUsingPrecision(item, precision);
 		}
 		return item;
 	}
@@ -261,33 +282,32 @@ const Timeline = (props: TimelineProps) => {
 		}
 	}
 	let left = false;
-	let qrArray = [];
-	for (const qr of Object.values(props.qrs)) {
-		const i = qrArray.findIndex((curEvent => curEvent.date.item.isAfter(qr.date.item)))
+	let timeline: TimelineCard[] = [];
+	for (const [dateString, timelineCard] of Object.entries(props.qrs)) {
+		const i = timeline.findIndex((curEvent => (curEvent.date.item as dayjs.Dayjs).isAfter(timelineCard.date.item)))
 		if (i==-1) {
-			qrArray.push(qr);
+			timeline.push(timelineCard);
 		} else {
-			qrArray = qrArray.slice(0, i).concat(qr, qrArray.slice(i))
+			timeline = timeline.slice(0, i).concat(timelineCard, timeline.slice(i))
 		}
 	}
-	const events = qrArray.map(qr => {
+	const cards = timeline.map(card => {
 		left = !left;
 		return <div className={left ? "event left" : "event right"}>
-				<h1>{formatUsingPrecision(qr.date.item, qr.date.precision)}</h1>
-				<h4>{
-				'propertyStatement' in qr ?
-					qr.propertyStatement.property + ": " + fixDateString(
-						qr.propertyStatement.item,
-						qr.propertyStatement.item in props.qrs ? props.qrs[qr.propertyStatement.item].date.precision : -1
-					) + " (" + qr.date.property + ")" :
-					qr.date.property
-				}</h4>
-				{'qualifiers' in qr && qr.qualifiers.map(x => <p>{x.property}: {fixDateString(x.item, x.item in props.qrs ? props.qrs[x.item].date.precision : -1)}</p>)}
+				<h1>{fixDateString(card.date.item, card.date.precision)}</h1>
+				{Object.values(card.events).map(event => {
+					return <><h4>{`${event.propertyStatement.property}: ${fixDateString(
+						event.propertyStatement.item,
+						event.propertyStatement.item in props.qrs ? props.qrs[event.propertyStatement.item].date.precision : -1
+					)} (${card.date.property})`}</h4>
+					{'qualifiers' in event && event.qualifiers.map(q => <p>{q.property}: {fixDateString(q.item, q.item in props.qrs ? props.qrs[q.item].date.precision : -1)}</p>)}
+					</>
+				})}
 			</div>
 	})
 	return (
 		<div id="timeline">
-			{events}
+			{cards}
 		</div>
 	)
 }
