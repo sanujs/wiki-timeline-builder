@@ -27,8 +27,8 @@ body {
 }
 
 #app {
-	width: 75%;
-	max-width: 1280px;
+	width: 95%;
+	max-width: 900px;
 	margin: 0 auto;
 	text-align: center;
 }
@@ -51,8 +51,9 @@ section {
 
 #search {
 	position: relative;
-	width: 30rem;
+	width: 94%;
 	margin: 0 auto 25px;
+	max-width: 539px;
 }
 
 #suggestions {
@@ -87,7 +88,7 @@ section {
 	content: '';
 	position: absolute;
 	width: 6px;
-	background-color: white;
+	background-color: lightslategray;
 	top: 0;
 	bottom: 0;
 	left: 50%;
@@ -96,15 +97,15 @@ section {
 
 .event {
 	text-align: left;
-	background-color: #222;
+	background-color: lightgrey;
 	border-radius: 1rem;
 	position: relative;
-	padding: 10px 40px 30px;
+	padding: 10px 30px 30px;
 	width: 40%;
 }
 
 .left {
-	left: 0;
+	left: 0%;
 }
 
 .right {
@@ -112,11 +113,11 @@ section {
 }
 
 h4 {
-	margin: inherit;
+	margin: 0 auto;
 }
 
 p {
-	margin: inherit;
+	margin: 0 auto;
 }
 
 li {
@@ -124,15 +125,26 @@ li {
 	cursor: pointer;
 }
 
-@media (max-width: 639px) {
+@media (max-width: 699px) {
 	#app {
-		margin: 2rem;
+		width: 94%;
 	}
-	section {
-		margin-top: 5rem;
-		grid-template-columns: 1fr;
-		row-gap: 1rem;
+	/* #search {
+		width: 94%;
+	} */
+	.event {
+		width: 80%;
+		margin-bottom: 30px;
 	}
+	.left {
+		left: 15%;
+	}
+	.right {
+		left: 15%;
+	}
+	#timeline::after {
+	left: 5%;
+}
 }
 
 @media (prefers-color-scheme: dark) {
@@ -149,5 +161,8 @@ li {
 	}
 	#timeline::after {
 		background-color: lightslategrey;
+	}
+	.event {
+		background-color: #222;
 	}
 }

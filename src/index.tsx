@@ -222,7 +222,7 @@ const App = () => {
 
 	return (
 		<div>
-			<h1>Get started building a beautiful timeline</h1>
+			<h1>Build a beautiful timeline</h1>
 			<Search value={search} setSearch={setSearch} suggestions={suggestions} userSelect={userSelectWikiData}/>
 			{loading ? <h1>Loading...</h1> : <Timeline to={timelineState}/>}
 		</div>
@@ -278,6 +278,7 @@ type TimelineProps = {
 }
 
 const Timeline = (props: TimelineProps) => {
+	const [timelineCards, setTimelineCards] = useState([] as TimelineCard[]);
 	const fixDateString = (item: string | dayjs.Dayjs, precision: number) : string => {
 		switch (typeof item) {
 			case "string":
@@ -300,17 +301,20 @@ const Timeline = (props: TimelineProps) => {
 			default: return date.format("MMMM DD, YYYY");
 		}
 	}
-	let left = false;
-	let timeline: TimelineCard[] = [];
-	for (const timelineCard of Object.values(props.to)) {
-		const i = timeline.findIndex((curEvent => (curEvent.date.item as dayjs.Dayjs).isAfter(timelineCard.date.item)))
-		if (i==-1) {
-			timeline.push(timelineCard);
-		} else {
-			timeline = timeline.slice(0, i).concat(timelineCard, timeline.slice(i))
+	useEffect(()=> {
+		let timeline: TimelineCard[] = [];
+		for (const timelineCard of Object.values(props.to)) {
+			const i = timeline.findIndex((curEvent => (curEvent.date.item as dayjs.Dayjs).isAfter(timelineCard.date.item)))
+			if (i==-1) {
+				timeline.push(timelineCard);
+			} else {
+				timeline = timeline.slice(0, i).concat(timelineCard, timeline.slice(i))
+			}
 		}
-	}
-	const cards = timeline.map(card => {
+		setTimelineCards(timeline);
+	}, [props.to]);
+	let left = false;
+	const cards = timelineCards.map(card => {
 		left = !left;
 		return <div className={left ? "event left" : "event right"}>
 				<h1>{fixDateString(card.date.item, card.date.precision)}</h1>
