@@ -5,6 +5,7 @@ import './style.css';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
+import loadingAnimation from './assets/loading.gif';
 
 dayjs.extend(utc);
 dayjs.extend(customParseFormat);
@@ -224,7 +225,7 @@ const App = () => {
 		<div>
 			<h1>Build a beautiful timeline</h1>
 			<Search value={search} setSearch={setSearch} suggestions={suggestions} userSelect={userSelectWikiData}/>
-			{loading ? <h1>Loading...</h1> : <Timeline to={timelineState}/>}
+			{loading ? <img id="loadingAnimation" src={loadingAnimation} /> : <Timeline to={timelineState}/>}
 		</div>
 	);
 }

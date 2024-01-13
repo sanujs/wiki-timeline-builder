@@ -125,6 +125,10 @@ li {
 	cursor: pointer;
 }
 
+#loadingAnimation {
+	width: 500px;
+}
+
 @media (max-width: 699px) {
 	#app {
 		width: 94%;
