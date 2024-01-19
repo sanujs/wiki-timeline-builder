@@ -27,7 +27,7 @@ body {
 }
 
 #app {
-	width: 95%;
+	width: 100%;
 	max-width: 900px;
 	margin: 0 auto;
 	text-align: center;
@@ -51,7 +51,7 @@ section {
 
 #search {
 	position: relative;
-	width: 94%;
+	width: 100%;
 	margin: 0 auto 25px;
 	max-width: 539px;
 }
@@ -131,11 +131,8 @@ li {
 
 @media (max-width: 699px) {
 	#app {
-		width: 94%;
+		width: 90%;
 	}
-	/* #search {
-		width: 94%;
-	} */
 	.event {
 		width: 80%;
 		margin-bottom: 30px;
