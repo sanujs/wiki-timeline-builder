@@ -12,11 +12,10 @@ dayjs.extend(customParseFormat);
 
 type WikiSuggestion = {
 	description: string,
-	descriptionsource?: string,
-	index: number,
-	ns?: number,
 	pageid: number,
-	title: string
+	label: string,
+	url: string,
+	id: string,
 }
 
 type QueryObject = {
@@ -73,102 +72,77 @@ const App = () => {
 		// Get suggestions during a search
 		const paramsObj = {
 			origin: "*",
-			action: "query",
+			action: "wbsearchentities",
+			search: search,
 			format: "json",
-			generator: "prefixsearch",
-			prop: "pageprops|pageimages|description",
-			redirects: "",
-			ppprop: "displaytitle",
-			piprop: "thumbnail",
-			pithumbsize: "75",
-			pilimit: "6",
-			gpssearch: search,
-			gpsnamespace: "0",
-			gpslimit: "6",
+			errorformat: "plaintext",
+			language: "en",
+			uselang: "en",
+			type: "item",
 		}
-		fetch("https://en.wikipedia.org/w/api.php?" + new URLSearchParams(paramsObj).toString(), {
+		fetch("https://www.wikidata.org/w/api.php?" + new URLSearchParams(paramsObj).toString(), {
 			method: "GET",
 			headers: {
 				"Origin": "*"
 			}
 		})
 			.then(response => {
+				console.log(response);
 				if (!response.ok) {
 					throw response;
 				}
 				return response.json();
 			})
 			.then(response => {
-				if ("error" in response) {
-					if (response["error"]["code"] != "missingparam") {
-						setError(response["error"])
+				if ("errors" in response) {
+					if (response["errors"][0]["code"] != "missingparam") {
+						setError(response["errors"][0])
 					} else {
 						setSuggestions([])
 					}
 					return
 				}
-				const pages: { [key: number]: WikiSuggestion } = response.query.pages;
-				const newState: WikiSuggestion[] = [];
-				Object.keys(pages).forEach(key => {newState[pages[key]["index"]-1] = pages[key]})
+				const pages: { [key: number]: WikiSuggestion } = response.search;
+				const newState: WikiSuggestion[] = Object.values(pages);
+				console.log(newState);
 				setSuggestions(newState)
 			})
 	}, [search])
-
 	const userSelectWikiData = (choice: WikiSuggestion): void => {
 		// User clicks a suggestion
 		setSearch('');
 		setSuggestions([]);
 		setLoading(true);
-		// Get wikibase item number from wikipedia title
-		const paramsObj = {
-			origin: "*",
-			action: "query",
-			format: "json",
-			prop: "pageprops",
-			ppprop: "wikibase_item",
-			formatversion: "2",
-			titles: choice.title,
-		}
-		fetch("https://en.wikipedia.org/w/api.php?" + new URLSearchParams(paramsObj).toString())
-			.then(response => {
-				if (!response.ok) {
-					throw response;
-				}
-				return response.json();
-			})
-			.then(response => {
-				console.log(response);
-				const itemID = response.query.pages[0].pageprops.wikibase_item;
-				console.log(itemID);
-				// SPARQL Query: https://w.wiki/8UZ9
-				const query = `
-				SELECT ?propertyItemLabel ?valueLabel ?qualifierItemLabel ?pointintime ?precision ?oqpLabel ?oqvLabel WHERE {
-					{
-					  wd:${itemID} ?property [?pValue ?valuenode].
-					  ?propertyItem wikibase:statementValue ?pValue.
-					  ?valuenode wikibase:timeValue ?pointintime.
-					  ?valuenode wikibase:timePrecision ?precision.
-					  BIND(?pointintime as ?value).
-					  BIND(?propertyItem as ?qualifierItem).
-					}
-					UNION
-					{
-					  wd:${itemID} ?property ?statement.
-					  ?statement ?pValue ?valuenode.
-					  ?qualifierItem wikibase:qualifierValue ?pValue.
-					  ?valuenode wikibase:timeValue ?pointintime.
-					  ?valuenode wikibase:timePrecision ?precision.
-					  
-					  ?statement ?ps ?value.
-					  ?propertyItem wikibase:statementProperty ?ps.
-					  ?statement ?otherQualifierProperty ?oqv.
-					  ?oqp wikibase:qualifier ?otherQualifierProperty.
-					}
-					SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
-				  }
-				`
-				return fetch("https://query.wikidata.org/sparql?origin=*&format=json&query=" + query);
-			})
+		const itemID = choice.id;
+		console.log(itemID);
+		// SPARQL Query: https://w.wiki/8UZ9
+		const query = `
+		SELECT ?propertyItemLabel ?valueLabel ?qualifierItemLabel ?pointintime ?precision ?oqpLabel ?oqvLabel WHERE {
+			{
+				wd:${itemID} ?property [?pValue ?valuenode].
+				?propertyItem wikibase:statementValue ?pValue.
+				?valuenode wikibase:timeValue ?pointintime.
+				?valuenode wikibase:timePrecision ?precision.
+				BIND(?pointintime as ?value).
+				BIND(?propertyItem as ?qualifierItem).
+			}
+			UNION
+			{
+				wd:${itemID} ?property ?statement.
+				?statement ?pValue ?valuenode.
+				?qualifierItem wikibase:qualifierValue ?pValue.
+				?valuenode wikibase:timeValue ?pointintime.
+				?valuenode wikibase:timePrecision ?precision.
+				
+				?statement ?ps ?value.
+				?propertyItem wikibase:statementProperty ?ps.
+				?statement ?otherQualifierProperty ?oqv.
+				?oqp wikibase:qualifier ?otherQualifierProperty.
+			}
+			SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+			}
+		`
+		fetch("https://query.wikidata.org/sparql?origin=*&format=json&query=" + query)
 			.then(response => {
 				if (!response.ok) {
 					throw response;
@@ -248,7 +222,7 @@ const Search = (props: SearchProps) => {
 				onClick={_ => props.userSelect(suggestion)}
 			>
 				<div className="suggestion-text">
-					<h4>{suggestion.title}</h4>
+					<h4>{suggestion.label}</h4>
 					<p className="suggestion-description">{suggestion.description}</p>
 				</div>
 				<div
