@@ -39,7 +39,7 @@ type QueryResult = {
 type WikidataDate = {
 	property: string,
 	date: dayjs.Dayjs,
-	precision?: number,
+	precision: number,
 }
 type WikidataItem = {
 	property: string,
@@ -59,6 +59,34 @@ export type TimelineCard = {
 export type TimelineObject = {
 	// key is a timeline date as a string
 	[key: string]: TimelineCard
+}
+
+export const formatUsingPrecision = (item: string | dayjs.Dayjs, precision: number) : string => {
+	// Format date strings or objects to the correct string given a precision value
+	let date: dayjs.Dayjs;
+	// Convert string to date
+	switch (typeof item) {
+		case "string":
+			if (dayjs(item, "YYYY-MM-DDTHH:mm:ssZ").isValid()) {
+				date = dayjs(item, "YYYY-MM-DDTHH:mm:ssZ"), precision;
+			} else {
+				// If item is not a date, return the string untouched
+				return item;
+			}
+			break;
+		case "object":
+			date = item;
+	}
+	// Set UTC and precision of date and convert date to string
+	date = date.utc();
+	// https://www.wikidata.org/wiki/Help:Dates#Precision
+	switch(precision) {
+		case 7: return date.format("YYYY").substring(0, 2) + "00s";
+		case 8: return date.format("YYYY").substring(0, 3) + "0s";
+		case 9: return date.format("YYYY");
+		case 10: return date.format("MMMM YYYY");
+		default: return date.format("MMMM DD, YYYY");
+	}
 }
 
 const App = () => {
@@ -174,7 +202,10 @@ const App = () => {
 							qualifiers: [],
 							propertyStatement: {
 								'property': result.propertyItemLabel.value,
-								'item': result.valueLabel.value,
+								'item': formatUsingPrecision(
+									result.valueLabel.value,
+									parseInt(result.precision.value),
+								),
 							},
 						}
 					}
@@ -182,7 +213,10 @@ const App = () => {
 						// Create a new qualifier in the event
 						const newQualifier: WikidataItem = {
 							'property': result.oqpLabel.value,
-							'item': result.oqvLabel.value,
+							'item': formatUsingPrecision(
+									result.oqvLabel.value,
+									parseInt(result.precision.value),
+								),
 						}
 						// Ignore duplicate qualifiers
 						if (result.oqpLabel.value != result.PITQualifierLabel.value &&
