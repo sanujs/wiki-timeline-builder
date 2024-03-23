@@ -2,7 +2,7 @@ import { TimelineCard } from "../index";
 import dayjs from "dayjs";
 
 type TimelineProps = {
-	to: TimelineCard[],
+	cards: TimelineCard[],
 }
 
 const Timeline = (props: TimelineProps) => {
@@ -29,21 +29,21 @@ const Timeline = (props: TimelineProps) => {
 		}
 	}
 	let left = false;
-	const cards = props.to.map(card => {
+	const cards = props.cards.map(card => {
 		left = !left;
 		return <div className={left ? "event left" : "event right"}>
-				<h1>{fixDateString(card.date.item, card.date.precision)}</h1>
+				<h1>{fixDateString(card.date.date, card.date.precision)}</h1>
 				{Object.values(card.events).map(event => {
 					return <>
 						<h4>
 						{`${event.propertyStatement.property}: ${fixDateString(
 							event.propertyStatement.item,
-							event.propertyStatement.item in props.to ? props.to[event.propertyStatement.item].date.precision : -1
+							event.propertyStatement.item in props.cards ? props.cards[event.propertyStatement.item].date.precision : -1
 						)} (${card.date.property})`}
 						</h4>
 						{'qualifiers' in event && event.qualifiers.map(q => <p>
 							{q.property}: {fixDateString(
-								q.item, q.item in props.to ? props.to[q.item].date.precision : -1
+								q.item, q.item in props.cards ? props.cards[q.item].date.precision : -1
 							)}
 						</p>)}
 					</>

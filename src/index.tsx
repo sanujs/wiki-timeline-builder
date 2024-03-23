@@ -38,13 +38,12 @@ type QueryResult = {
 
 type WikidataDate = {
 	property: string,
-	item: dayjs.Dayjs,
+	date: dayjs.Dayjs,
 	precision?: number,
 }
 type WikidataItem = {
 	property: string,
 	item: string,
-	precision?: number,
 }
 
 export type TimelineCard = {
@@ -154,22 +153,24 @@ const App = () => {
 			.then(response => {
 				console.log("response: ", response)
 				const results: QueryResult[] = response.results.bindings;
-				const to = {};
+				const timelineDict: { [key: string]: TimelineCard} = {}; // Dict to merge events with the same date
 
 				for (const result of results) {
 					const event: string = result.propertyItemLabel.value + ":" + result.valueLabel.value;
-					if (!(result.pointintime.value in to)) {
-						to[result.pointintime.value] = {
+					if (!(result.pointintime.value in timelineDict)) {
+						// Create a new card in the timeline
+						timelineDict[result.pointintime.value] = {
 							date: {
 								'property': result.PITQualifierLabel.value,
-								'item': dayjs(result.pointintime.value, "YYYY-MM-DDTHH:mm:ssZ"),
+								'date': dayjs(result.pointintime.value, "YYYY-MM-DDTHH:mm:ssZ"),
 								'precision': parseInt(result.precision.value),
 							},
 							events: {},
 						}
 					}
-					if (!(event in to[result.pointintime.value].events)) {
-						to[result.pointintime.value].events[event] = {
+					if (!(event in timelineDict[result.pointintime.value].events)) {
+						// Create a new event in the card
+						timelineDict[result.pointintime.value].events[event] = {
 							qualifiers: [],
 							propertyStatement: {
 								'property': result.propertyItemLabel.value,
@@ -178,23 +179,25 @@ const App = () => {
 						}
 					}
 					if ('oqpLabel' in result) {
+						// Create a new qualifier in the event
 						const newQualifier: WikidataItem = {
 							'property': result.oqpLabel.value,
 							'item': result.oqvLabel.value,
 						}
 						// Ignore duplicate qualifiers
 						if (result.oqpLabel.value != result.PITQualifierLabel.value &&
-							!to[result.pointintime.value].events[event].qualifiers.some(e =>
+							!timelineDict[result.pointintime.value].events[event].qualifiers.some(e =>
 								e.property == newQualifier.property && e.item == newQualifier.item
 							)
 						)
-							to[result.pointintime.value].events[event].qualifiers.push(newQualifier);
+							timelineDict[result.pointintime.value].events[event].qualifiers.push(newQualifier);
 					}
 				}
 				setLoading(false);
+				// Sort the timeline by date before saving it in the state
 				setTimelineState(
-					Object.values(to).sort((a: TimelineCard, b: TimelineCard) => {
-						if (a.date.item.isBefore(b.date.item)) {
+					Object.values(timelineDict).sort((a: TimelineCard, b: TimelineCard) => {
+						if (a.date.date.isBefore(b.date.date)) {
 							return -1
 						}
 						return 1
@@ -202,13 +205,13 @@ const App = () => {
 				));
 			})
 	}
-	useEffect(()=>{console.log("TO:", timelineState)}, [timelineState])
+	useEffect(()=>{console.log("timelineState:", timelineState)}, [timelineState])
 
 	return (
 		<div>
 			<h1>Build a beautiful timeline</h1>
 			<Search value={search} setSearch={setSearch} suggestions={suggestions} userSelect={userSelectWikiData}/>
-			{loading ? <img id="loadingAnimation" src={loadingAnimation} /> : <Timeline to={timelineState}/>}
+			{loading ? <img id="loadingAnimation" src={loadingAnimation} /> : <Timeline cards={timelineState}/>}
 		</div>
 	);
 }
