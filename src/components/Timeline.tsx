@@ -1,13 +1,11 @@
-import { useEffect, useState } from "preact/hooks";
-import { TimelineObject, TimelineCard } from "../index";
+import { TimelineCard } from "../index";
 import dayjs from "dayjs";
 
 type TimelineProps = {
-	to: TimelineObject,
+	to: TimelineCard[],
 }
 
 const Timeline = (props: TimelineProps) => {
-	const [timelineCards, setTimelineCards] = useState([] as TimelineCard[]);
 	const fixDateString = (item: string | dayjs.Dayjs, precision: number) : string => {
 		switch (typeof item) {
 			case "string":
@@ -30,20 +28,8 @@ const Timeline = (props: TimelineProps) => {
 			default: return date.format("MMMM DD, YYYY");
 		}
 	}
-	useEffect(()=> {
-		let timeline: TimelineCard[] = [];
-		for (const timelineCard of Object.values(props.to)) {
-			const i = timeline.findIndex((curEvent => (curEvent.date.item as dayjs.Dayjs).isAfter(timelineCard.date.item)))
-			if (i==-1) {
-				timeline.push(timelineCard);
-			} else {
-				timeline = timeline.slice(0, i).concat(timelineCard, timeline.slice(i))
-			}
-		}
-		setTimelineCards(timeline);
-	}, [props.to]);
 	let left = false;
-	const cards = timelineCards.map(card => {
+	const cards = props.to.map(card => {
 		left = !left;
 		return <div className={left ? "event left" : "event right"}>
 				<h1>{fixDateString(card.date.item, card.date.precision)}</h1>

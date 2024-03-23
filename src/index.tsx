@@ -30,7 +30,7 @@ type QueryResult = {
 	pointintime: QueryObject,
 	precision: QueryObject,
 	propertyItemLabel: QueryObject,
-	qualifierItemLabel: QueryObject,
+	PITQualifierLabel: QueryObject,
 	valueLabel: QueryObject,
 	oqpLabel?: QueryObject,
 	oqvLabel?: QueryObject,
@@ -51,7 +51,7 @@ export type TimelineCard = {
 	date: WikidataDate,
 	events: {
 		[key: string]: { // Event (formatted as "<propertyitem>:<valueitem>")
-			propertyStatement: WikidataItem,
+			propertyStatement: WikidataItem, // propertyItemLabel and valueLabel
 			qualifiers: WikidataItem[],
 		}
 	}
@@ -66,7 +66,7 @@ const App = () => {
 	const [search, setSearch] = useState('');
 	const [error, setError] = useState(null);
 	const [suggestions, setSuggestions] = useState([]);
-	const [timelineState, setTimelineState] = useState({});
+	const [timelineState, setTimelineState] = useState([]);
 	const [loading, setLoading] = useState(false);
 
 	useEffect(() => {
@@ -116,32 +116,33 @@ const App = () => {
 		setLoading(true);
 		const itemID = choice.id;
 		console.log(itemID);
-		// SPARQL Query: https://w.wiki/8UZ9
+		// SPARQL Query: https://w.wiki/9Yk6
 		const query = `
-		SELECT ?propertyItemLabel ?valueLabel ?qualifierItemLabel ?pointintime ?precision ?oqpLabel ?oqvLabel WHERE {
+		  SELECT ?propertyItemLabel ?valueLabel ?PITQualifierLabel ?pointintime ?precision ?oqpLabel ?oqvLabel WHERE {
+			BIND(wd:${itemID} as ?item).
 			{
-				wd:${itemID} ?property [?pValue ?valuenode].
-				?propertyItem wikibase:statementValue ?pValue.
-				?valuenode wikibase:timeValue ?pointintime.
-				?valuenode wikibase:timePrecision ?precision.
-				BIND(?pointintime as ?value).
-				BIND(?propertyItem as ?qualifierItem).
+			  ?item ?property [?pValue ?valuenode].
+			  ?propertyItem wikibase:statementValue ?pValue.
+			  ?valuenode wikibase:timeValue ?pointintime.
+			  ?valuenode wikibase:timePrecision ?precision.
+			  BIND(?pointintime as ?value).
+			  BIND(?propertyItem as ?PITQualifier).
 			}
 			UNION
 			{
-				wd:${itemID} ?property ?statement.
-				?statement ?pValue ?valuenode.
-				?qualifierItem wikibase:qualifierValue ?pValue.
-				?valuenode wikibase:timeValue ?pointintime.
-				?valuenode wikibase:timePrecision ?precision.
-				
-				?statement ?ps ?value.
-				?propertyItem wikibase:statementProperty ?ps.
-				?statement ?otherQualifierProperty ?oqv.
-				?oqp wikibase:qualifier ?otherQualifierProperty.
+			  ?item ?property ?statement.
+			  ?statement ?pValue ?valuenode.
+			  ?PITQualifier wikibase:qualifierValue ?pValue.
+			  ?valuenode wikibase:timeValue ?pointintime.
+			  ?valuenode wikibase:timePrecision ?precision.
+
+			  ?statement ?ps ?value.
+			  ?propertyItem wikibase:statementProperty ?ps.
+			  ?statement ?otherQualifierProperty ?oqv.
+			  ?oqp wikibase:qualifier ?otherQualifierProperty.
 			}
 			SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
-			}
+		  }
 		`
 		fetch("https://query.wikidata.org/sparql?origin=*&format=json&query=" + query)
 			.then(response => {
@@ -153,14 +154,14 @@ const App = () => {
 			.then(response => {
 				console.log("response: ", response)
 				const results: QueryResult[] = response.results.bindings;
-				const to: TimelineObject = {};
+				const to = {};
 
 				for (const result of results) {
 					const event: string = result.propertyItemLabel.value + ":" + result.valueLabel.value;
 					if (!(result.pointintime.value in to)) {
 						to[result.pointintime.value] = {
 							date: {
-								'property': result.qualifierItemLabel.value,
+								'property': result.PITQualifierLabel.value,
 								'item': dayjs(result.pointintime.value, "YYYY-MM-DDTHH:mm:ssZ"),
 								'precision': parseInt(result.precision.value),
 							},
@@ -182,7 +183,7 @@ const App = () => {
 							'item': result.oqvLabel.value,
 						}
 						// Ignore duplicate qualifiers
-						if (result.oqpLabel.value != result.qualifierItemLabel.value &&
+						if (result.oqpLabel.value != result.PITQualifierLabel.value &&
 							!to[result.pointintime.value].events[event].qualifiers.some(e =>
 								e.property == newQualifier.property && e.item == newQualifier.item
 							)
@@ -191,7 +192,14 @@ const App = () => {
 					}
 				}
 				setLoading(false);
-				setTimelineState(to);
+				setTimelineState(
+					Object.values(to).sort((a: TimelineCard, b: TimelineCard) => {
+						if (a.date.item.isBefore(b.date.item)) {
+							return -1
+						}
+						return 1
+					}
+				));
 			})
 	}
 	useEffect(()=>{console.log("TO:", timelineState)}, [timelineState])
